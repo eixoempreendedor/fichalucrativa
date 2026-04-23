@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    background-color: theme("colors.brand.bg");
+    color: theme("colors.brand.ink");
+    font-family: theme("fontFamily.sans");
+  }
+  h1, h2, h3 {
+    font-family: theme("fontFamily.display");
+    font-weight: 500;
+  }
+}

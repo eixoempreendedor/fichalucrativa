@@ -1,0 +1,260 @@
+// Ficha Lucrativa — Prisma schema
+// Ver docs/adr/0001-stack.md
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Identidade
+// ──────────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String?  @unique
+  whatsappE164  String   @unique @map("whatsapp_e164")
+  name          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  restaurants   Restaurant[]
+  conversations Conversation[]
+  subscriptions Subscription[]
+
+  @@map("users")
+}
+
+model Restaurant {
+  id            String   @id @default(uuid())
+  ownerId       String   @map("owner_id")
+  name          String
+  segment       Segment
+  city          String?
+  stateUf       String?  @map("state_uf") @db.Char(2)
+  defaultMarkup Decimal  @default(0.30) @map("default_markup") @db.Decimal(5, 4)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  owner              User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  dishes             Dish[]
+  ingredients        Ingredient[]        @relation("IngredientCreatedBy")
+  ingredientPrices   IngredientPrice[]
+
+  @@index([ownerId])
+  @@map("restaurants")
+}
+
+enum Segment {
+  lanchonete
+  pizzaria
+  food_truck
+  confeitaria
+  dark_kitchen
+  restaurante
+  padaria
+  outro
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Catálogo de ingredientes
+// ──────────────────────────────────────────────────────────────────
+
+model Ingredient {
+  id             String   @id @default(uuid())
+  name           String
+  canonicalName  String   @map("canonical_name")
+  unit           String   // 'g','kg','ml','l','un'
+  category       String?
+  isGlobal       Boolean  @default(false) @map("is_global")
+  createdById    String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  createdBy        Restaurant?       @relation("IngredientCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  prices           IngredientPrice[]
+  dishIngredients  DishIngredient[]
+
+  @@unique([canonicalName, createdById])
+  @@index([canonicalName])
+  @@map("ingredients")
+}
+
+model IngredientPrice {
+  id            String   @id @default(uuid())
+  ingredientId  String   @map("ingredient_id")
+  restaurantId  String?  @map("restaurant_id")
+  priceBrl      Decimal  @map("price_brl") @db.Decimal(10, 4)
+  quantity      Decimal  @db.Decimal(10, 3)
+  unit          String
+  source        PriceSource
+  validFrom     DateTime @default(now()) @map("valid_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ingredient    Ingredient  @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  restaurant    Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([ingredientId, restaurantId, validFrom(sort: Desc)])
+  @@map("ingredient_prices")
+}
+
+enum PriceSource {
+  seed
+  user
+  nota_fiscal
+  crowdsource
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Fichas
+// ──────────────────────────────────────────────────────────────────
+
+model Dish {
+  id                String     @id @default(uuid())
+  restaurantId      String     @map("restaurant_id")
+  name              String
+  yieldUnits        Int        @default(1) @map("yield_units")
+  prepMinutes       Int?       @map("prep_minutes")
+  stage             DishStage  @default(basica)
+  status            DishStatus @default(em_construcao)
+  totalCostBrl      Decimal?   @map("total_cost_brl") @db.Decimal(10, 2)
+  suggestedPriceBrl Decimal?   @map("suggested_price_brl") @db.Decimal(10, 2)
+  actualPriceBrl    Decimal?   @map("actual_price_brl") @db.Decimal(10, 2)
+  marginPct         Decimal?   @map("margin_pct") @db.Decimal(5, 2)
+  notes             String?
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  restaurant       Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  ingredients      DishIngredient[]
+  conversations    Conversation[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId, status])
+  @@map("dishes")
+}
+
+enum DishStage {
+  basica
+  custo_preco
+  pop
+  nutricional
+}
+
+enum DishStatus {
+  em_construcao
+  pronta
+  validada
+  arquivada
+}
+
+model DishIngredient {
+  id           String   @id @default(uuid())
+  dishId       String   @map("dish_id")
+  ingredientId String   @map("ingredient_id")
+  quantity     Decimal  @db.Decimal(10, 3)
+  unit         String
+  unitCostBrl  Decimal? @map("unit_cost_brl") @db.Decimal(10, 4)
+  lineCostBrl  Decimal? @map("line_cost_brl") @db.Decimal(10, 4)
+
+  dish       Dish       @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@unique([dishId, ingredientId])
+  @@map("dish_ingredients")
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Conversa
+// ──────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id             String            @id @default(uuid())
+  userId         String            @map("user_id")
+  activeDishId   String?           @map("active_dish_id")
+  state          ConversationState @default(idle)
+  pendingFields  Json              @default("[]") @map("pending_fields")
+  lastMessageAt  DateTime?         @map("last_message_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeDish  Dish?     @relation(fields: [activeDishId], references: [id], onDelete: SetNull)
+  messages    Message[]
+
+  @@index([userId])
+  @@map("conversations")
+}
+
+enum ConversationState {
+  idle
+  collecting_ingredients
+  confirming_ingredients
+  collecting_prices
+  confirming_final
+  finalized
+}
+
+model Message {
+  id             String         @id @default(uuid())
+  conversationId String         @map("conversation_id")
+  direction      MsgDirection
+  type           MsgType
+  contentText    String?        @map("content_text")
+  mediaUrl       String?        @map("media_url")
+  rawPayload     Json?          @map("raw_payload")
+  costUsd        Decimal?       @map("cost_usd") @db.Decimal(10, 6)
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@map("messages")
+}
+
+enum MsgDirection {
+  inbound
+  outbound
+}
+
+enum MsgType {
+  text
+  audio
+  image
+  document
+  system
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Assinaturas
+// ──────────────────────────────────────────────────────────────────
+
+model Subscription {
+  id                String           @id @default(uuid())
+  userId            String           @map("user_id")
+  asaasCustomerId   String?          @map("asaas_customer_id")
+  asaasSubId        String?          @map("asaas_sub_id")
+  plan              Plan             @default(trial)
+  status            SubStatus        @default(trialing)
+  currentPeriodEnd  DateTime?        @map("current_period_end")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("subscriptions")
+}
+
+enum Plan {
+  trial
+  basic
+  pro
+}
+
+enum SubStatus {
+  trialing
+  active
+  past_due
+  canceled
+}
