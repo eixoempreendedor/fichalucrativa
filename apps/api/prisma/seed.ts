@@ -121,33 +121,41 @@ const INGREDIENTS: SeedIngredient[] = [
 async function main() {
   console.log(`Iniciando seed de ${INGREDIENTS.length} ingredientes...`);
 
+  // Prisma não aceita null em chave composta do upsert. Fazemos findFirst + create.
   for (const item of INGREDIENTS) {
-    const ingredient = await prisma.ingredient.upsert({
-      where: { canonicalName_createdById: { canonicalName: item.canonicalName, createdById: null as any } },
-      create: {
-        name: item.name,
-        canonicalName: item.canonicalName,
-        unit: item.unit,
-        category: item.category,
-        isGlobal: true,
-      },
-      update: {
-        name: item.name,
-        unit: item.unit,
-        category: item.category,
-      },
+    const existing = await prisma.ingredient.findFirst({
+      where: { canonicalName: item.canonicalName, createdById: null },
     });
 
-    await prisma.ingredientPrice.create({
-      data: {
-        ingredientId: ingredient.id,
-        restaurantId: null,
-        priceBrl: item.priceBrl,
-        quantity: item.quantity,
-        unit: item.priceUnit,
-        source: PriceSource.seed,
-      },
+    const ingredient =
+      existing ??
+      (await prisma.ingredient.create({
+        data: {
+          name: item.name,
+          canonicalName: item.canonicalName,
+          unit: item.unit,
+          category: item.category,
+          isGlobal: true,
+        },
+      }));
+
+    // Só adiciona preço baseline se ainda não existir um seed para esse ingrediente.
+    const hasSeedPrice = await prisma.ingredientPrice.findFirst({
+      where: { ingredientId: ingredient.id, source: PriceSource.seed, restaurantId: null },
     });
+
+    if (!hasSeedPrice) {
+      await prisma.ingredientPrice.create({
+        data: {
+          ingredientId: ingredient.id,
+          restaurantId: null,
+          priceBrl: item.priceBrl,
+          quantity: item.quantity,
+          unit: item.priceUnit,
+          source: PriceSource.seed,
+        },
+      });
+    }
   }
 
   console.log(`✅ Seed concluído: ${INGREDIENTS.length} ingredientes com preços baseline.`);
