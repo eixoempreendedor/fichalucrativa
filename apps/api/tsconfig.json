@@ -6,6 +6,6 @@
     "jsx": "react-jsx",
     "types": ["node"]
   },
-  "include": ["src/**/*", "prisma/seed.ts"],
-  "exclude": ["node_modules", "dist", "test"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "prisma"]
 }
