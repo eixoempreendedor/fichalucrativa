@@ -1,0 +1,17 @@
+# Força Nixpacks a usar pnpm (não npm) no monorepo com pnpm workspaces.
+# Necessário porque `workspace:*` em package.json quebra com npm install.
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm-9_x"]
+
+[phases.install]
+cmds = ["pnpm install --frozen-lockfile"]
+
+[phases.build]
+cmds = [
+  "pnpm --filter @ficha-lucrativa/api prisma generate",
+  "pnpm --filter @ficha-lucrativa/api build"
+]
+
+[start]
+cmd = "pnpm --filter @ficha-lucrativa/api start"
